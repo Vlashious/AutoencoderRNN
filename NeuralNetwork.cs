@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using MathNet.Numerics.Distributions;
 using MathNet.Numerics.LinearAlgebra;
@@ -22,7 +23,7 @@ namespace MRZuIS1
         public NeuralNetwork(Rect[] rects)
         {
             _rects = rects;
-            Console.WriteLine("Enter the learning rates (0, 0.01] and error (0, 0.1] through comma: ");
+            Console.WriteLine("Enter the learning rate and error through comma: ");
             var data = Console.ReadLine().Split(",");
             LearningRate = double.Parse(data[0]);
             Error = double.Parse(data[1]);
@@ -30,10 +31,10 @@ namespace MRZuIS1
             Console.WriteLine("Enter the size of the bottleneck: ");
             var hiddenLayerSize = int.Parse(Console.ReadLine());
 
-            _firstLayerWeights = Matrix<double>.Build.Random(_rects[0].MatrixR.ColumnCount, hiddenLayerSize, new ContinuousUniform(-1, 1));
+            _firstLayerWeights = Matrix<double>.Build.Random(_rects[0].MatrixR.ColumnCount, hiddenLayerSize, new ContinuousUniform(-0.1, 0.1));
             _secondLayerWeights = _firstLayerWeights.Transpose();
 
-            CompressionRate = ((double)_rects[0].MatrixR.ColumnCount * _rects.Length) / ((_rects[0].MatrixR.ColumnCount + _rects.Length) * hiddenLayerSize + 2);
+            CompressionRate = ((double)_rects[0].MatrixR.ColumnCount * (double)_rects[0].MatrixR.RowCount * _rects.Length) / (((double)_rects[0].MatrixR.ColumnCount * (double)_rects[0].MatrixR.RowCount + _rects.Length) * hiddenLayerSize + 2);
         }
 
         /// <summary>
@@ -46,14 +47,12 @@ namespace MRZuIS1
             while (curError > Error || double.IsNaN(curError))
             {
                 curError = 0;
-                // Parallel.For(0, _rects.Length, i =>
-                // {
-                //     curError += ProcessRect(_rects[i]);
-                // });
-                foreach (var r in _rects)
+                LearningSteps++;
+                Parallel.For(0, _rects.Length, (i) =>
                 {
-                    curError += ProcessRect(r);
-                }
+                    ProcessRect(_rects[i]);
+                });
+                curError = _rects.AsParallel().Select((r) => ProcessRectGetError(r)).Sum(); ;
                 Console.WriteLine($"Error for sample is: {curError} of {Error}");
             }
             Console.WriteLine($"Training is over!");
@@ -86,20 +85,30 @@ namespace MRZuIS1
         }
 
         /// <summary>
-        /// Process one rect.
+        /// Process one rect without calculating the error.
         /// </summary>
         /// <param name="rect">The rect to process.</param>
-        /// <returns>Error for the processed rect.</returns>
-        private double ProcessRect(Rect rect)
+        /// <returns></returns>
+        private void ProcessRect(Rect rect)
+        {
+            ProcessVector(rect.MatrixR);
+            ProcessVector(rect.MatrixG);
+            ProcessVector(rect.MatrixB);
+        }
+
+        /// <summary>
+        /// Processes one rect and outputs the error for the rect.
+        /// </summary>
+        /// <param name="rect">The rect to process</param>
+        /// <returns>Error for the rect.</returns>
+        private double ProcessRectGetError(Rect rect)
         {
             var error = ProcessVectorGetDelta(rect.MatrixR);
             error += ProcessVectorGetDelta(rect.MatrixG);
             error += ProcessVectorGetDelta(rect.MatrixB);
 
-            LearningSteps++;
-            return error * error / 3;
+            return error;
         }
-
         /// <summary>
         /// Process the input vector.
         /// </summary>
@@ -111,16 +120,13 @@ namespace MRZuIS1
             var x1 = y * _secondLayerWeights;
             var delta = x1 - vector;
 
-            _secondLayerWeights -= LearningRate * y.Transpose() * delta;
-            _firstLayerWeights -= LearningRate * vector.Transpose() * delta * _secondLayerWeights.Transpose();
-
             var vec = Vector<double>.Build.DenseOfArray(delta.ToRowMajorArray());
             vec = vec.Map(f => f * f);
             return vec.Sum() / vec.Count;
         }
 
         /// <summary>
-        /// Processed the vector without the training.
+        /// Processed the vector without calculating the error.
         /// </summary>
         /// <param name="vector">The vector to process.</param>
         /// <returns>Processed vector.</returns>
@@ -128,6 +134,10 @@ namespace MRZuIS1
         {
             var y = vector * _firstLayerWeights;
             var x1 = y * _secondLayerWeights;
+            var delta = x1 - vector;
+
+            _firstLayerWeights -= LearningRate * vector.Transpose() * delta * _secondLayerWeights.Transpose();
+            _secondLayerWeights -= LearningRate * y.Transpose() * delta;
 
             return x1;
         }
