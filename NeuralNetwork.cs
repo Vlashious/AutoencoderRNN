@@ -48,10 +48,11 @@ namespace MRZuIS1
             {
                 curError = 0;
                 LearningSteps++;
-                Parallel.For(0, _rects.Length, (i) =>
-                {
-                    ProcessRect(_rects[i]);
-                });
+                // Parallel.For(0, _rects.Length, (i) =>
+                // {
+                //     ProcessRect(_rects[i]);
+                // });
+                foreach (var rect in _rects) ProcessRect(rect);
                 curError = _rects.AsParallel().Select((r) => ProcessRectGetError(r)).Sum(); ;
                 Console.WriteLine($"Error for sample is: {curError} of {Error}");
             }
@@ -122,7 +123,7 @@ namespace MRZuIS1
 
             var vec = Vector<double>.Build.DenseOfArray(delta.ToRowMajorArray());
             vec = vec.Map(f => f * f);
-            return vec.Sum() / vec.Count;
+            return vec.Sum();
         }
 
         /// <summary>
